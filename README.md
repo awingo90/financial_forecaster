@@ -14,7 +14,7 @@ A Python-based tool to create and manage financial forecasts with recurring tran
 
 1. Clone this repository:
    ```
-   git clone https://github.com/awingo90/financial-forecaster.git
+   git clone https://github.com/awingo90/financial_forecaster.git
    cd financial-forecaster
    ```
 
