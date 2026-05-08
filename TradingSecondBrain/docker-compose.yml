@@ -51,13 +51,17 @@ services:
       - "${API_PORT:-8088}:8088"
     environment:
       - VAULT_PATH=/vault
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # URLs to host services are hardcoded to host.docker.internal so the
+      # default .env (which uses localhost for native runs) doesn't mislead the
+      # container. If you run Ollama as a sibling container via the
+      # with-ollama profile, change to http://ollama:11434.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OBSIDIAN_API_URL=http://host.docker.internal:27124
       - OLLAMA_REASONING_MODEL=${OLLAMA_REASONING_MODEL:-qwen3:32b}
       - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
       - VECTOR_BACKEND=${VECTOR_BACKEND:-qdrant}
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-trading_vault}
-      - OBSIDIAN_API_URL=${OBSIDIAN_API_URL:-http://host.docker.internal:27124}
       - OBSIDIAN_API_KEY=${OBSIDIAN_API_KEY}
       - API_HOST=0.0.0.0
       - API_PORT=8088
