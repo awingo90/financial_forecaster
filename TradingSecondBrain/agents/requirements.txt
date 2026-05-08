@@ -18,9 +18,11 @@ crewai==0.70.1
 openai>=1.50,<2.0
 ollama>=0.3,<1.0
 
-# Vector store (default). chromadb is optional — install separately if you
-# set VECTOR_BACKEND=chroma:  `pip install "chromadb>=0.4.22,<0.5.0"`
-qdrant-client>=1.11,<2.0
+# Vector store (default). Pin to match the qdrant server image (v1.11.3) —
+# client >=1.13 removed the .search() method and warns on version mismatch.
+# chromadb is optional — install separately if you set VECTOR_BACKEND=chroma:
+#   pip install "chromadb>=0.4.22,<0.5.0"
+qdrant-client==1.11.3
 
 # Vault parsing
 python-frontmatter>=1.1
