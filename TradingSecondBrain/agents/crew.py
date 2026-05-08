@@ -46,6 +46,21 @@ def _llm() -> LLM:
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 VAULT = Path(settings.vault_path).expanduser()
 
+# CrewAI 0.70.x wraps every agent call in a ReAct loop even when the agent has
+# no tools — output that isn't framed as `Thought: ... \n Final Answer: ...` is
+# rejected and triggers a retry. We append this reminder to every task so the
+# model uses the exact format CrewAI expects.
+_FORMAT_REMINDER = """
+You have NO tools available. Respond using EXACTLY this format and nothing else:
+
+Thought: I now can give a great answer.
+Final Answer: <a single JSON object matching the AgentOutput schema in VAULT.md §7>
+
+Do NOT emit `Action:` or `Action Input:` lines. Do NOT include any prose, code
+fences, or explanatory text outside the `Final Answer:` line. The content after
+`Final Answer:` must be parseable JSON on its own.
+"""
+
 
 def _system_prefix() -> str:
     vault_md = (VAULT / "VAULT.md").read_text(encoding="utf-8") if (VAULT / "VAULT.md").exists() else ""
@@ -104,6 +119,9 @@ def _trader() -> Agent:
 # --------------------------------------------------------------------- tasks
 
 
+_EXPECTED = "A single JSON object matching AgentOutput, prefixed by 'Final Answer: '."
+
+
 def _research_task(question: str, retrieval: list[dict], universe_stats: list[dict]) -> Task:
     desc = dedent(
         f"""
@@ -115,12 +133,12 @@ def _research_task(question: str, retrieval: list[dict], universe_stats: list[di
         ## Quick market stats
         {json.dumps(universe_stats, indent=2)}
 
-        Produce ONLY a JSON object that validates against the AgentOutput schema in
-        VAULT.md §7. Do not include any prose outside the JSON. Set agent="Researcher".
+        Produce a JSON object that validates against the AgentOutput schema in
+        VAULT.md §7. Set agent="Researcher".
+        {_FORMAT_REMINDER}
         """
     )
-    return Task(description=desc, agent=_researcher(),
-                expected_output="A single JSON object matching AgentOutput.")
+    return Task(description=desc, agent=_researcher(), expected_output=_EXPECTED)
 
 
 def _analyst_task(prev: str) -> Task:
@@ -132,11 +150,11 @@ def _analyst_task(prev: str) -> Task:
         ```
 
         Update each claim's posterior, propose 3–5 candidate ideas, set
-        agent="Analyst". Return only the JSON object.
+        agent="Analyst".
+        {_FORMAT_REMINDER}
         """
     )
-    return Task(description=desc, agent=_analyst(),
-                expected_output="A single JSON object matching AgentOutput.")
+    return Task(description=desc, agent=_analyst(), expected_output=_EXPECTED)
 
 
 def _critic_task(prev: str, disconfirm_retrieval: list[dict]) -> Task:
@@ -152,11 +170,10 @@ def _critic_task(prev: str, disconfirm_retrieval: list[dict]) -> Task:
 
         Apply VAULT.md §6 caps. Append at least one disconfirming claim per idea.
         Set agent="Critic" and status="REVIEWED" if approved, else "DRAFT".
-        Return only the JSON object.
+        {_FORMAT_REMINDER}
         """
     )
-    return Task(description=desc, agent=_critic(),
-                expected_output="A single JSON object matching AgentOutput.")
+    return Task(description=desc, agent=_critic(), expected_output=_EXPECTED)
 
 
 def _trader_task(prev: str, backtests: dict[str, dict]) -> Task:
@@ -174,27 +191,38 @@ def _trader_task(prev: str, backtests: dict[str, dict]) -> Task:
 
         Fill in `risk` (sizing/stop/target/horizon) per TRADING_SYSTEM.md house
         rules. Apply event-week halving if applicable. Set agent="Trader" and
-        status="SIMULATED — NOT FOR EXECUTION". Return only the JSON object.
+        status="SIMULATED — NOT FOR EXECUTION".
+        {_FORMAT_REMINDER}
         """
     )
-    return Task(description=desc, agent=_trader(),
-                expected_output="A single JSON object matching AgentOutput.")
+    return Task(description=desc, agent=_trader(), expected_output=_EXPECTED)
 
 
 # --------------------------------------------------------------------- helpers
 
 
 def _parse_output(raw: str) -> AgentOutput:
-    """CrewAI returns a string. Extract the JSON, validate, return AgentOutput."""
-    txt = raw.strip()
-    # Tolerate ```json fences
+    """Extract the JSON object from whatever CrewAI returned.
+
+    Tolerates: ReAct ``Thought:/Final Answer:`` wrappers, ```json``` fences,
+    leading/trailing prose. Falls back to first ``{`` ... last ``}`` slice.
+    """
+    txt = str(raw).strip()
+    # Strip ReAct prefix
+    if "Final Answer:" in txt:
+        txt = txt.split("Final Answer:", 1)[1].strip()
+    # Strip ```json``` fences
     if txt.startswith("```"):
         txt = txt.split("```", 2)[1]
-        if txt.startswith("json"):
+        if txt.lower().startswith("json"):
             txt = txt[4:]
-        txt = txt.rsplit("```", 1)[0]
-    data = json.loads(txt)
-    return AgentOutput.model_validate(data)
+        txt = txt.rsplit("```", 1)[0].strip()
+    # Last-resort: slice from first { to last } so stray prose doesn't break us
+    start = txt.find("{")
+    end = txt.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        txt = txt[start : end + 1]
+    return AgentOutput.model_validate(json.loads(txt))
 
 
 def _candidate_tickers(ao: AgentOutput) -> list[str]:
