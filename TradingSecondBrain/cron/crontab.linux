@@ -1,0 +1,11 @@
+# Linux fallback (e.g. Raspberry Pi, Mac Mini running Linux). Install:
+#   crontab cron/crontab.linux
+#
+# Adjust TSB_HOME if your install path differs.
+TSB_HOME=/home/$USER/TradingSecondBrain
+
+# Daily brief, weekdays 06:00 local
+0 6 * * 1-5 $TSB_HOME/cron/run_daily.sh >> $TSB_HOME/cron/daily.log 2>&1
+
+# Weekly reflection, Sundays 23:00 local
+0 23 * * 0 $TSB_HOME/cron/run_reflect.sh >> $TSB_HOME/cron/reflect.log 2>&1

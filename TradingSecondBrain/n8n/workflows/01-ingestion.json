@@ -1,0 +1,120 @@
+{
+  "name": "01 — Ingestion (Readwise / Airr / Whisper / Telegram / Twitter)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "minutes", "minutesInterval": 15 }
+          ]
+        }
+      },
+      "id": "cron-15",
+      "name": "Every 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://readwise.io/api/v2/highlights/?updated__gt={{$json.last_run || '2024-01-01T00:00:00Z'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "readwise",
+      "name": "Readwise — new highlights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200],
+      "credentials": { "httpHeaderAuth": { "id": "readwise", "name": "Readwise Token" } }
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{$env.TELEGRAM_BOT_TOKEN}}/getUpdates",
+        "options": {}
+      },
+      "id": "telegram",
+      "name": "Telegram — saved messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 320]
+    },
+    {
+      "parameters": {
+        "command": "ls -1 ${HOME}/TradingSecondBrain/obsidian-vault/Inbox/_voice/*.wav 2>/dev/null | head -50"
+      },
+      "id": "whisper-list",
+      "name": "Whisper — list new voice files",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [460, 440]
+    },
+    {
+      "parameters": {
+        "command": "for f in $(echo \"{{$json.stdout}}\" | tr ' ' '\\n' | grep -v ^$); do whisper \"$f\" --model base --output_format txt --output_dir ${HOME}/TradingSecondBrain/obsidian-vault/Sources/Transcripts && mv \"$f\" \"$f.done\"; done"
+      },
+      "id": "whisper-transcribe",
+      "name": "Whisper — transcribe",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [720, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize each upstream source into a vault-ready note.\nconst items = $input.all();\nconst out = [];\nfor (const it of items) {\n  const j = it.json || {};\n  let path, body;\n  if (j.results && Array.isArray(j.results)) {\n    // Readwise\n    for (const h of j.results) {\n      const slug = (h.book_title||'note').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);\n      path = `Sources/Articles/${(h.highlighted_at||'').slice(0,10)}-${slug}.md`;\n      body = `---\\ntype: source\\nsource_type: article\\nurl: ${h.url||''}\\nauthor: ${h.author||''}\\ncaptured_at: ${h.highlighted_at||''}\\ncredibility: secondary\\ntags: [source, readwise]\\n---\\n\\n# ${h.book_title||'Untitled'}\\n\\n> ${(h.text||'').replace(/\\n/g,' ')}\\n`;\n      out.push({ json: { path, body } });\n    }\n  } else if (j.result && Array.isArray(j.result)) {\n    // Telegram\n    for (const u of j.result) {\n      const m = u.message; if (!m || !m.text) continue;\n      const slug = m.text.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);\n      const date = new Date((m.date||0)*1000).toISOString().slice(0,10);\n      path = `Inbox/${date}-tg-${slug}.md`;\n      body = `---\\ntype: source\\nsource_type: tweet\\nurl: ''\\ncaptured_at: ${new Date((m.date||0)*1000).toISOString()}\\ncredibility: social\\ntags: [source, telegram]\\n---\\n\\n${m.text}\\n`;\n      out.push({ json: { path, body } });\n    }\n  }\n}\nreturn out;"
+      },
+      "id": "normalize",
+      "name": "Normalize → vault note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 320]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{$env.OBSIDIAN_API_URL}}/vault/{{$json.path}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/markdown",
+        "body": "={{$json.body}}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "obsidian-put",
+      "name": "Write to Obsidian vault",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 320],
+      "credentials": { "httpHeaderAuth": { "id": "obsidian", "name": "Obsidian REST" } }
+    }
+  ],
+  "connections": {
+    "Every 15 min": {
+      "main": [[
+        { "node": "Readwise — new highlights", "type": "main", "index": 0 },
+        { "node": "Telegram — saved messages", "type": "main", "index": 0 },
+        { "node": "Whisper — list new voice files", "type": "main", "index": 0 }
+      ]]
+    },
+    "Whisper — list new voice files": {
+      "main": [[{ "node": "Whisper — transcribe", "type": "main", "index": 0 }]]
+    },
+    "Readwise — new highlights": {
+      "main": [[{ "node": "Normalize → vault note", "type": "main", "index": 0 }]]
+    },
+    "Telegram — saved messages": {
+      "main": [[{ "node": "Normalize → vault note", "type": "main", "index": 0 }]]
+    },
+    "Whisper — transcribe": {
+      "main": [[{ "node": "Normalize → vault note", "type": "main", "index": 0 }]]
+    },
+    "Normalize → vault note": {
+      "main": [[{ "node": "Write to Obsidian vault", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [{ "name": "trading-second-brain" }]
+}

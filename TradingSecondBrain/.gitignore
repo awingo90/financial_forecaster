@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Environment
+.env
+.env.local
+*.local
+
+# Obsidian workspace state (keep plugins config, ignore per-user state)
+obsidian-vault/.obsidian/workspace*
+obsidian-vault/.obsidian/cache
+obsidian-vault/.trash/
+
+# Vector DB
+qdrant_storage/
+chroma_storage/
+
+# Logs
+*.log
+logs/
+agents/logs/
+
+# Data caches
+data/cache/
+agents/cache/
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+{
+  "promptDelete": true,
+  "alwaysUpdateLinks": true,
+  "newFileLocation": "folder",
+  "newFileFolderPath": "Inbox",
+  "attachmentFolderPath": "Sources/_attachments",
+  "useMarkdownLinks": false,
+  "showLineNumber": true,
+  "strictLineBreaks": false
+}

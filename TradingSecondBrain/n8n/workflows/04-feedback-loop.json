@@ -1,0 +1,79 @@
+{
+  "name": "04 — Feedback loop (voice note → thesis confidence delta)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 5 }] }
+      },
+      "id": "cron-5m",
+      "name": "Every 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "command": "ls -1 ${HOME}/TradingSecondBrain/obsidian-vault/Inbox/_feedback/*.wav 2>/dev/null | head -10"
+      },
+      "id": "list",
+      "name": "List feedback voice notes",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "command": "for f in $(echo \"{{$json.stdout}}\" | tr ' ' '\\n' | grep -v ^$); do whisper \"$f\" --model base --output_format json --output_dir ${HOME}/TradingSecondBrain/obsidian-vault/Inbox/_feedback && mv \"$f\" \"$f.done\"; done"
+      },
+      "id": "whisper",
+      "name": "Whisper transcribe",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Naive parser: extract `<thesis-id>` and a signed delta from the transcript.\n// Operator says e.g. \"thesis 2026-05-08-AAPL-v1 plus 10 because earnings beat\".\nconst stdout = String($json.stdout || '');\nconst lines = stdout.split('\\n').filter(Boolean);\nconst out = [];\nfor (const line of lines) {\n  const m = line.match(/(\\d{4}-\\d{2}-\\d{2}-[A-Za-z0-9]+-v\\d+)\\D+([+-]?\\d{1,3})/);\n  if (m) out.push({ json: { thesis_id: m[1], delta: parseInt(m[2], 10), note: line } });\n}\nreturn out;"
+      },
+      "id": "parse",
+      "name": "Parse thesis_id + delta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://{{$env.AGENT_API_HOST}}:{{$env.AGENT_API_PORT}}/feedback",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Token", "value": "={{$env.AGENT_API_TOKEN}}" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "thesis_id", "value": "={{$json.thesis_id}}" },
+            { "name": "delta", "value": "={{$json.delta}}" },
+            { "name": "note", "value": "={{$json.note}}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "feedback",
+      "name": "POST /feedback (FastAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Every 5 min": { "main": [[{ "node": "List feedback voice notes", "type": "main", "index": 0 }]] },
+    "List feedback voice notes": { "main": [[{ "node": "Whisper transcribe", "type": "main", "index": 0 }]] },
+    "Whisper transcribe": { "main": [[{ "node": "Parse thesis_id + delta", "type": "main", "index": 0 }]] },
+    "Parse thesis_id + delta": { "main": [[{ "node": "POST /feedback (FastAPI)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "trading-second-brain" }]
+}
