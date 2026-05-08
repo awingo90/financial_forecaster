@@ -156,11 +156,24 @@ pip install -r agents/requirements.txt
 ### 4.4 Configure Obsidian
 
 1. Open Obsidian → File → Open vault → choose `~/TradingSecondBrain/obsidian-vault`.
-2. Settings → Community plugins → Turn on community plugins → Browse → install
-   Smart Connections, Local REST API, Dataview, Advanced URI, Templater, Obsidian
-   Git, Calendar (the committed `community-plugins.json` lists them all so
-   Obsidian offers a one-click install).
-3. Settings → Local REST API → "Copy API Key". Paste the value into:
+2. Settings → Community plugins → **Turn on community plugins** (disable Restricted mode).
+3. Install the 7 plugins. Pick **one** of:
+
+   **Option A — one-shot script (recommended):**
+   ```bash
+   ./scripts/install-obsidian-plugins.sh
+   ```
+   Fetches `manifest.json` / `main.js` / `styles.css` for all 7 plugins
+   from their GitHub releases. Preserves the pre-staged `data.json` configs.
+   After it finishes, quit Obsidian (⌘Q) and reopen the vault — they
+   auto-enable from `community-plugins.json`.
+
+   **Option B — manual:**
+   In Settings → Community plugins → Browse, search and Install each, then
+   Enable: Smart Connections, Local REST API, Dataview, Advanced URI,
+   Templater, Obsidian Git, Calendar.
+
+4. Settings → Local REST API → "Copy API Key". Paste into:
    - `.env` as `OBSIDIAN_API_KEY=...`
    - `.obsidian/plugins/obsidian-local-rest-api/data.json` (replace
      `REPLACE_ME_WITH_VALUE_FROM_PLUGIN_UI`).
