@@ -15,7 +15,8 @@ ollama==0.3.3
 
 # RAG
 qdrant-client==1.11.3
-chromadb==0.5.5
+# chromadb upper bound is forced by crewai-tools 0.12.1 (chromadb<0.5.0)
+chromadb>=0.4.22,<0.5.0
 sentence-transformers==3.1.1
 
 # Markdown parsing
