@@ -236,6 +236,7 @@ def run_daily(question: str = "What are the highest-conviction setups for tomorr
                            process=Process.sequential, verbose=True)
     researcher_raw = str(researcher_crew.kickoff())
     researcher_out = _parse_output(researcher_raw)
+    researcher_out.run_id = run_id
     obsidian.write_run_log("Researcher", run_id, researcher_out.model_dump_json(indent=2))
     obsidian.append_to_memory("researcher", researcher_out.summary, run_id)
 
@@ -245,6 +246,7 @@ def run_daily(question: str = "What are the highest-conviction setups for tomorr
                         process=Process.sequential, verbose=True)
     analyst_raw = str(analyst_crew.kickoff())
     analyst_out = _parse_output(analyst_raw)
+    analyst_out.run_id = run_id
     obsidian.write_run_log("Analyst", run_id, analyst_out.model_dump_json(indent=2))
     obsidian.append_to_memory("analyst", analyst_out.summary, run_id)
 
@@ -256,6 +258,7 @@ def run_daily(question: str = "What are the highest-conviction setups for tomorr
                        process=Process.sequential, verbose=True)
     critic_raw = str(critic_crew.kickoff())
     critic_out = _parse_output(critic_raw)
+    critic_out.run_id = run_id
     obsidian.write_run_log("Critic", run_id, critic_out.model_dump_json(indent=2))
     obsidian.append_to_memory("critic", critic_out.summary, run_id)
 
@@ -274,6 +277,7 @@ def run_daily(question: str = "What are the highest-conviction setups for tomorr
                        process=Process.sequential, verbose=True)
     trader_raw = str(trader_crew.kickoff())
     trader_out = _parse_output(trader_raw)
+    trader_out.run_id = run_id
     trader_out.status = "SIMULATED — NOT FOR EXECUTION"
     obsidian.write_run_log("Trader", run_id, trader_out.model_dump_json(indent=2))
     obsidian.append_to_memory("trader", trader_out.summary, run_id)
@@ -368,5 +372,6 @@ def run_reflection() -> AgentOutput:
         logger.error(f"reflection parse failed: {e}")
         ao = AgentOutput(agent="Reflection", summary="Reflection parse failed; see log.",
                          confidence=0, status="DRAFT")
+    ao.run_id = run_id
     obsidian.write_run_log("Reflection", run_id, ao.model_dump_json(indent=2))
     return ao

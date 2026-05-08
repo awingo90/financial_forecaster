@@ -84,22 +84,40 @@ TradingSecondBrain/
 
 ## 3. Prerequisites (Mac Mini specific)
 
+> **zsh gotcha.** macOS zsh does **not** treat `# comment` after a command as a
+> comment by default — pasting a line like `cp .env.example .env  # edit later`
+> will try to copy `# edit later` as files. Either run `setopt interactive_comments`
+> first, or strip the comments. The blocks below are comment-free for that reason.
+
 ```bash
 # Homebrew tools
 brew install git python@3.11 jq curl
-brew install --cask obsidian docker
+brew install --cask obsidian
+brew install --cask docker
 
+# Start Docker Desktop once so the `docker` CLI exists on $PATH:
+open -a Docker
+# Then wait until Docker shows "Engine running" in the menu bar before continuing.
+```
+
+```bash
 # Ollama (host-native = best on Apple Silicon)
 brew install ollama
-ollama serve &                     # leave running, or `brew services start ollama`
 
-# Pull models (reasoning + embeddings)
-ollama pull qwen3:32b              # or `deepseek-r1:32b` if you prefer
+# Start the daemon FIRST — `ollama pull` needs a running server.
+brew services start ollama
+# (or run in foreground:  ollama serve &)
+
+# Give the daemon a beat, then pull models.
+sleep 2
+ollama pull qwen3:32b
 ollama pull nomic-embed-text
+```
 
-# Optional voice ingest
+```bash
+# Optional voice ingest (workflows 01 and 04)
 brew install ffmpeg
-pip3 install -U openai-whisper     # for n8n workflow 01 + 04
+pip3 install -U openai-whisper
 ```
 
 > Disk usage: `qwen3:32b` ≈ 19 GB, `nomic-embed-text` ≈ 280 MB, Qdrant + n8n
@@ -107,54 +125,81 @@ pip3 install -U openai-whisper     # for n8n workflow 01 + 04
 
 ## 4. First-time Setup
 
+Replace `<git-url>` with the URL of your fork or clone. All blocks are
+comment-free so you can paste them straight into zsh.
+
+### 4.1 Clone the project
+
 ```bash
-# 1. Place the project where the launchd scripts expect it.
 mkdir -p ~/TradingSecondBrain
-git clone <this-repo> ~/TradingSecondBrain   # or copy these files into it
+git clone <git-url> ~/TradingSecondBrain
 cd ~/TradingSecondBrain
+```
 
-# 2. Configure environment
+### 4.2 Configure environment
+
+```bash
 cp .env.example .env
-# edit .env: set OBSIDIAN_API_KEY (after step 5), API_TOKEN, optional POLYGON_API_KEY
+```
 
-# 3. Install Python deps for native runs (skip if you only use docker-compose)
+Then open `.env` in your editor and set at minimum `API_TOKEN` (any random
+string), and after step 4.4, `OBSIDIAN_API_KEY`.
+
+### 4.3 Python deps (only if you want native runs alongside Docker)
+
+```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r agents/requirements.txt
+```
 
-# 4. Open the vault in Obsidian once
-#   File → Open vault → choose obsidian-vault/
-#   Settings → Community plugins → Turn on community plugins → Browse → install:
-#       Smart Connections · Local REST API · Dataview · Advanced URI ·
-#       Templater · Obsidian Git · Calendar
-#   The folder ./obsidian-vault/.obsidian/community-plugins.json already lists them
-#   so Obsidian will offer to install them in one click.
+### 4.4 Configure Obsidian
 
-# 5. Generate the Local REST API key
-#   In Obsidian → Settings → Local REST API → "Copy API Key"
-#   Paste it into .env as OBSIDIAN_API_KEY=...
-#   Also paste it into .obsidian/plugins/obsidian-local-rest-api/data.json.
+1. Open Obsidian → File → Open vault → choose `~/TradingSecondBrain/obsidian-vault`.
+2. Settings → Community plugins → Turn on community plugins → Browse → install
+   Smart Connections, Local REST API, Dataview, Advanced URI, Templater, Obsidian
+   Git, Calendar (the committed `community-plugins.json` lists them all so
+   Obsidian offers a one-click install).
+3. Settings → Local REST API → "Copy API Key". Paste the value into:
+   - `.env` as `OBSIDIAN_API_KEY=...`
+   - `.obsidian/plugins/obsidian-local-rest-api/data.json` (replace
+     `REPLACE_ME_WITH_VALUE_FROM_PLUGIN_UI`).
 
-# 6. Initialize git inside the vault for auto-commit
-cd obsidian-vault && git init && git add -A && git commit -m "vault: bootstrap"
-cd ..
+### 4.5 Initialize git inside the vault for auto-commit
 
-# 7. Bring the stack up
+```bash
+git -C obsidian-vault init
+git -C obsidian-vault add -A
+git -C obsidian-vault commit -m "vault: bootstrap"
+```
+
+### 4.6 Bring the stack up
+
+```bash
 docker compose up -d qdrant n8n agents
-# (skip `agents` and run uvicorn natively if you prefer hot-reloads:
-#  uvicorn agents.main:app --host 127.0.0.1 --port 8088 --reload)
+```
 
-# 8. Sanity-check
+If you'd rather hot-reload the API natively, leave `agents` out and run
+`uvicorn agents.main:app --host 127.0.0.1 --port 8088 --reload`.
+
+### 4.7 Sanity-check
+
+```bash
+set -a; source .env; set +a
 curl -s http://127.0.0.1:8088/health | jq
 curl -s -X POST http://127.0.0.1:8088/ingest -H "X-API-Token: $API_TOKEN" | jq
 curl -s -X POST http://127.0.0.1:8088/brief  -H "X-API-Token: $API_TOKEN" \
      -H "Content-Type: application/json" -d '{"horizon":"swing"}' | jq
+```
 
-# 9. Import n8n workflows
-#   Open http://localhost:5678 → Workflows → Import from file
-#   Import each file under n8n/workflows/. Activate the ones you want.
+### 4.8 Import n8n workflows
 
-# 10. Schedule the daily brief on the host
+Open http://localhost:5678 → Workflows → Import from file → import each
+`n8n/workflows/*.json` and activate the ones you want.
+
+### 4.9 Schedule the daily brief on the host
+
+```bash
 cp cron/com.tradingsecondbrain.dailybrief.plist  ~/Library/LaunchAgents/
 cp cron/com.tradingsecondbrain.weekly-reflect.plist ~/Library/LaunchAgents/
 launchctl load -w ~/Library/LaunchAgents/com.tradingsecondbrain.dailybrief.plist

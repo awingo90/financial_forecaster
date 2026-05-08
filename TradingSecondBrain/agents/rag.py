@@ -3,12 +3,14 @@
 - Ingestion walks the vault, chunks markdown notes, and embeds them with Ollama
   (nomic-embed-text by default).
 - Retrieval supports both Qdrant and Chroma, selected via settings.vector_backend.
-- Embedding is cached on disk so a re-run only embeds new/changed notes.
+- Embedding is cached on disk (``agents/cache/embed_cache.json``) keyed by a SHA-1
+  of the chunk text; a re-run only embeds new or changed notes.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +29,10 @@ from .config import settings
 CHUNK_SIZE = 800   # characters
 CHUNK_OVERLAP = 120
 SKIP_DIRS = {"Agents/Logs", "MarketData", ".obsidian", ".trash", ".smart-connections"}
+CACHE_PATH = Path(os.environ.get("EMBED_CACHE_PATH",
+                                  Path(__file__).parent / "cache" / "embed_cache.json"))
+# Embedding dimension for nomic-embed-text. Override via env if you swap models.
+DEFAULT_EMBED_DIM = int(os.environ.get("EMBED_DIM", "768"))
 
 
 @dataclass(slots=True)
@@ -98,11 +104,46 @@ def embed(text: str) -> list[float]:
     return r.json()["embedding"]
 
 
-def embed_batch(texts: list[str]) -> list[list[float]]:
-    return [embed(t) for t in texts]
+# ---------------------------------------------------------------- embed cache
+
+
+def _load_cache() -> dict[str, list[float]]:
+    if not CACHE_PATH.exists():
+        return {}
+    try:
+        return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"embed cache unreadable, starting fresh: {e}")
+        return {}
+
+
+def _save_cache(cache: dict[str, list[float]]) -> None:
+    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CACHE_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(cache), encoding="utf-8")
+    tmp.replace(CACHE_PATH)
+
+
+def embed_batch(texts: list[str], cache: dict[str, list[float]] | None = None) -> list[list[float]]:
+    """Embed a batch, reusing cached vectors keyed by SHA-1(text)."""
+    cache = cache if cache is not None else {}
+    out: list[list[float]] = []
+    for t in texts:
+        key = _hash(t)
+        v = cache.get(key)
+        if v is None:
+            v = embed(t)
+            cache[key] = v
+        out.append(v)
+    return out
 
 
 # ---------------------------------------------------------------- vector stores
+
+
+def _stable_point_id(chunk_id: str) -> int:
+    """Deterministic 63-bit int derived from the chunk_id (stable across processes)."""
+    return int(hashlib.sha1(chunk_id.encode("utf-8")).hexdigest()[:16], 16)
 
 
 class _QdrantStore:
@@ -112,20 +153,25 @@ class _QdrantStore:
 
         self.client = QdrantClient(url=settings.qdrant_url)
         self.collection = settings.qdrant_collection
-        # Probe a vector size
-        sample = embed("dimension probe")
         existing = {c.name for c in self.client.get_collections().collections}
         if self.collection not in existing:
+            # Probe embedding dimension only when we actually need to create the
+            # collection — avoids an Ollama round-trip on every startup.
+            try:
+                dim = len(embed("dimension probe"))
+            except Exception as e:
+                logger.warning(f"embed probe failed; falling back to DEFAULT_EMBED_DIM ({DEFAULT_EMBED_DIM}): {e}")
+                dim = DEFAULT_EMBED_DIM
             self.client.create_collection(
                 collection_name=self.collection,
-                vectors_config=VectorParams(size=len(sample), distance=Distance.COSINE),
+                vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
 
     def upsert(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
         from qdrant_client.http.models import PointStruct
 
         points = [
-            PointStruct(id=abs(hash(c.chunk_id)) % (10**18), vector=v,
+            PointStruct(id=_stable_point_id(c.chunk_id), vector=v,
                         payload={**c.metadata, "text": c.text, "chunk_id": c.chunk_id})
             for c, v in zip(chunks, vectors)
         ]
@@ -175,13 +221,20 @@ def ingest(vault: Path | None = None) -> int:
     if not chunks:
         return 0
     store = _store()
-    # Embed in batches of 32 to avoid hammering ollama
+    cache = _load_cache()
     BATCH = 32
+    new_or_changed = 0
     for i in range(0, len(chunks), BATCH):
         batch = chunks[i : i + BATCH]
-        vectors = embed_batch([c.text for c in batch])
+        before = sum(1 for c in batch if _hash(c.text) in cache)
+        vectors = embed_batch([c.text for c in batch], cache=cache)
+        new_or_changed += len(batch) - before
         store.upsert(batch, vectors)
-    logger.info(f"ingested {len(chunks)} chunks into {settings.vector_backend}")
+    _save_cache(cache)
+    logger.info(
+        f"ingested {len(chunks)} chunks into {settings.vector_backend} "
+        f"({new_or_changed} re-embedded, {len(chunks) - new_or_changed} cache hits)"
+    )
     return len(chunks)
 
 
