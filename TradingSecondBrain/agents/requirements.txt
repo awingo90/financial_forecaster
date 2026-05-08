@@ -1,35 +1,36 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-pydantic==2.9.2
-pydantic-settings==2.5.2
-httpx==0.27.2
-python-dotenv==1.0.1
+# Trimmed to only what the agents code actually imports. crewai pulls in
+# litellm (used to talk to Ollama), langchain, opentelemetry, embedchain, etc.
+# transitively — we let pip resolve those versions inside the constraints below.
 
-# Agent framework
+# API server
+fastapi>=0.115,<0.120
+uvicorn[standard]>=0.30,<0.40
+pydantic>=2.9,<3.0
+pydantic-settings>=2.5,<3.0
+httpx>=0.27,<0.29
+python-dotenv>=1.0
+
+# Multi-agent orchestration
 crewai==0.70.1
-crewai-tools==0.12.1
 
-# LLM clients (Ollama via OpenAI-compatible interface)
-openai==1.51.0
-ollama==0.3.3
+# LLM clients — Ollama is the default via crewai/litellm; openai kept for the
+# optional cloud fallback gated by ALLOW_CLOUD_LLM.
+openai>=1.50,<2.0
+ollama>=0.3,<1.0
 
-# RAG
-qdrant-client==1.11.3
-# chromadb upper bound is forced by crewai-tools 0.12.1 (chromadb<0.5.0)
-chromadb>=0.4.22,<0.5.0
-sentence-transformers==3.1.1
+# Vector store (default). chromadb is optional — install separately if you
+# set VECTOR_BACKEND=chroma:  `pip install "chromadb>=0.4.22,<0.5.0"`
+qdrant-client>=1.11,<2.0
 
-# Markdown parsing
-python-frontmatter==1.1.0
-markdown-it-py==3.0.0
+# Vault parsing
+python-frontmatter>=1.1
 
-# Market data + backtesting
-yfinance==0.2.44
-pandas==2.2.3
-numpy==1.26.4
-vectorbt==0.26.2
+# Market data + (hand-rolled) backtester
+yfinance>=0.2.44
+pandas>=2.2,<3.0
+numpy>=1.26,<2.0
 
-# Utilities
-tenacity==9.0.0
-loguru==0.7.2
-jsonschema==4.23.0
+# Utilities — tenacity upper bound is forced by crewai's `instructor` dep
+tenacity>=8.2.3,<9.0
+loguru>=0.7
+jsonschema>=4.23
