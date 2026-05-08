@@ -1,0 +1,14 @@
+{
+  "_comment": "Smart Connections configured for fully-local embeddings via Ollama. Adjust model if you pull a different embedder.",
+  "embedding_model_key": "ollama:nomic-embed-text",
+  "embed_input_min_chars": 200,
+  "skip_sections": false,
+  "smart_connections_folder": ".smart-connections",
+  "exclude_folders": ["Agents/Logs", "MarketData", ".obsidian", ".trash"],
+  "exclude_frontmatter_blocks": false,
+  "ollama_endpoint": "http://localhost:11434",
+  "ollama_chat_model": "qwen3:32b",
+  "max_tokens": 4000,
+  "review_context": false,
+  "show_full_path": true
+}

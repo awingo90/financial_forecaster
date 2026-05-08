@@ -1,0 +1,68 @@
+{
+  "name": "02 — Nightly sync → embed new vault notes into Qdrant",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 2 * * *" }] }
+      },
+      "id": "cron-2am",
+      "name": "Daily 02:00 local",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://{{$env.AGENT_API_HOST}}:{{$env.AGENT_API_PORT}}/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Token", "value": "={{$env.AGENT_API_TOKEN}}" }
+          ]
+        },
+        "options": { "timeout": 600000 }
+      },
+      "id": "ingest",
+      "name": "POST /ingest (FastAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Append a one-line ingest log to Agents/Memory/researcher.md\nconst body = $json.ingested_chunks ?? 'unknown';\nconst now = new Date().toISOString();\nreturn [{ json: { path: 'Agents/Memory/researcher.md', body: `\\n- ${now} embedded ${body} chunks (nightly)\\n` } }];"
+      },
+      "id": "log",
+      "name": "Build memory line",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OBSIDIAN_API_URL}}/vault/{{$json.path}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/markdown",
+        "body": "={{$json.body}}"
+      },
+      "id": "memory-append",
+      "name": "Append to Researcher memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 300],
+      "credentials": { "httpHeaderAuth": { "id": "obsidian", "name": "Obsidian REST" } }
+    }
+  ],
+  "connections": {
+    "Daily 02:00 local": { "main": [[{ "node": "POST /ingest (FastAPI)", "type": "main", "index": 0 }]] },
+    "POST /ingest (FastAPI)": { "main": [[{ "node": "Build memory line", "type": "main", "index": 0 }]] },
+    "Build memory line": { "main": [[{ "node": "Append to Researcher memory", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "trading-second-brain" }]
+}

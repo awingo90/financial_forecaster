@@ -1,0 +1,78 @@
+{
+  "name": "03 — 06:00 trigger → Daily Brief → Obsidian + push notification",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 6 * * 1-5" }] }
+      },
+      "id": "cron-6am",
+      "name": "Weekdays 06:00 local",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://{{$env.AGENT_API_HOST}}:{{$env.AGENT_API_PORT}}/brief",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Token", "value": "={{$env.AGENT_API_TOKEN}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\"horizon\": \"swing\", \"force_refresh\": false}",
+        "options": { "timeout": 1200000 }
+      },
+      "id": "call-brief",
+      "name": "POST /brief (FastAPI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nconst date = r.date || new Date().toISOString().slice(0,10);\nconst ideas = (r.ideas || [])[0] || {};\nconst conf = ideas.confidence ?? 0;\nconst summary = ideas.summary || 'no summary';\nreturn [{ json: {\n  title: `📈 Trading Brief ${date} — top conf ${conf}`,\n  body: `${summary}\\n\\nVault: ${r.markdown_path}\\n${r.status}`,\n  url: `obsidian://open?path=${encodeURIComponent(r.markdown_path)}`,\n  date, conf, status: r.status\n}}];"
+      },
+      "id": "format",
+      "name": "Format push payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ntfy.sh/{{$env.NTFY_TOPIC}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Title", "value": "={{$json.title}}" },
+            { "name": "Tags", "value": "chart_with_upwards_trend" },
+            { "name": "Click", "value": "={{$json.url}}" },
+            { "name": "Priority", "value": "default" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "text/plain",
+        "body": "={{$json.body}}"
+      },
+      "id": "ntfy",
+      "name": "Push via ntfy.sh",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Weekdays 06:00 local": { "main": [[{ "node": "POST /brief (FastAPI)", "type": "main", "index": 0 }]] },
+    "POST /brief (FastAPI)": { "main": [[{ "node": "Format push payload", "type": "main", "index": 0 }]] },
+    "Format push payload": { "main": [[{ "node": "Push via ntfy.sh", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "trading-second-brain" }]
+}

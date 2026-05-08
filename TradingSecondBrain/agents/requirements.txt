@@ -1,0 +1,34 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+httpx==0.27.2
+python-dotenv==1.0.1
+
+# Agent framework
+crewai==0.70.1
+crewai-tools==0.12.1
+
+# LLM clients (Ollama via OpenAI-compatible interface)
+openai==1.51.0
+ollama==0.3.3
+
+# RAG
+qdrant-client==1.11.3
+chromadb==0.5.5
+sentence-transformers==3.1.1
+
+# Markdown parsing
+python-frontmatter==1.1.0
+markdown-it-py==3.0.0
+
+# Market data + backtesting
+yfinance==0.2.44
+pandas==2.2.3
+numpy==1.26.4
+vectorbt==0.26.2
+
+# Utilities
+tenacity==9.0.0
+loguru==0.7.2
+jsonschema==4.23.0
